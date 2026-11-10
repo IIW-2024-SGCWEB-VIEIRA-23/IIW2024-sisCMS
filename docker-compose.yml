@@ -1,66 +1,72 @@
-#Etapa 1 - Banco de dados - MariaDB
-name: cms-sisCMS
+name: cms-siscms
 
 services:
+
+  #Etapa 1 - Banco de dados - MariaDB
   db:
-    image: mariadb:11
+    image: ${DB_IMAGE:-mariadb:11}
+    container_name: cms-db
     restart: unless-stopped
-    enviroment: 
-      MARIADB_DATABASE: ${DB_NAME}
-      MARIADB_USER: ${DB_USER}
-      MARIADB_PASSWORD: ${DB_PASSWORD}
-      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD} 
+    environment:
+      MARIADB_DATABASE: ${DB_NAME:-cms}
+      MARIADB_USER: ${DB_USER:-cmsuser}
+      MARIADB_PASSWORD: ${DB_PASSWORD:?defina DB_PASSWORD no arquivo .env}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:?defina DB_ROOT_PASSWORD no .env}
     volumes:
-        - dados-do-banco:/var/lib/mysql
-    volumes:
-      dados-do-banco:
+      - dados-do-banco:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
 
-#Etapa 2 - Wordpress
-
-    wordpress:
-      image: wordpress:php8.3-apache
-      restart: unless-stopped
-      ports:
-        - "8080:80"
-        enviroment:
-        WORDPRESS_DB_HOST: db
-        WORDPRESS_DB_NAME: ${DB_USER}
-        WORDPRESS_DB_USER: ${DB_USER}
-        WORDPRESS_DB_PASSWORD: ${DB_PASSWORD}
-      volumes:
-        -site-wordpress:/var/www/html
-      depends_on:
-      - db
-
-      WORDPRESS_CONFIG_EXTRA
-        if(isset($$_SERVER['HTTP_HOST']) {
-          define('WP_HOME', 'https://' . $$_SERVER[HTTPS_HOST'])
-          define("WP_SITEURL', 'https//' .$$_SERVER['HTTP_HOST']);
-        }
-        $$_SERVER['HTTPS'] = 'on';
-        
-
-  #Etapa 3 - Joomla
-
-  Joomla: 
-    image: joomla:5-php8.3-apache
+  #Etapa 2 — WordPress
+  wordpress:
+    profiles: ["wordpress"]
+    image: ${WP_IMAGE:-wordpress:php8.3-apache}
+    container_name: cms-wordpress
     restart: unless-stopped
     ports:
-      -"8080:80"
+      - "${PORTA_WEB:-8080}:80"
+    environment:
+      WORDPRESS_DB_HOST: db
+      WORDPRESS_DB_NAME: ${DB_NAME:-cms}
+      WORDPRESS_DB_USER: ${DB_USER:-cmsuser}
+      WORDPRESS_DB_PASSWORD: ${DB_PASSWORD}
+      WORDPRESS_DEBUG: ${WORDPRESS_DEBUG:-0}
+      WORDPRESS_CONFIG_EXTRA: |
+        if (isset($$_SERVER['HTTP_HOST'])) {
+            define('WP_HOME',    'https://' . $$_SERVER['HTTP_HOST']);
+            define('WP_SITEURL', 'https://' . $$_SERVER['HTTP_HOST']);
+        }
+        $$_SERVER['HTTPS'] = 'on';
+    volumes:
+      - site-wordpress:/var/www/html
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Etapa 3 — Joomla
+  joomla:
+    profiles: ["joomla"]
+    image: ${JOOMLA_IMAGE:-joomla:5-php8.3-apache}
+    container_name: cms-joomla
+    restart: unless-stopped
+    ports:
+      - "${PORTA_WEB:-8080}:80"
     environment:
       JOOMLA_DB_HOST: db
-      JOOMLA_DB_NAME: ${DB_NAME}
+      JOOMLA_DB_NAME: ${DB_NAME:-cms}
+      JOOMLA_DB_USER: ${DB_USER:-cmsuser}
       JOOMLA_DB_PASSWORD: ${DB_PASSWORD}
     volumes:
-      -site-joomla:/var/www/html
+      - site-joomla:/var/www/html
     depends_on:
-      -db
+      db:
+        condition: service_healthy
 
-  #Etapa 4 - Qual Serviço levantar 
-
-  volumes: 
-    dados-do-banco:
-    site-wordpress: # ou site-joomla:
-
-    WORDPRESS_CONFIG_EXTRA
-      
+volumes:
+  dados-do-banco:
+  site-wordpress:
+  site-joomla:
